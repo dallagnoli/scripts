@@ -186,7 +186,7 @@ configureSystem() {
 EOF
 }
 
-initCheck
+checkEnv
 clear
 setfont ter-v18b
 enterUsername
