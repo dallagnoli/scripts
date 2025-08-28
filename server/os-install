@@ -4,12 +4,6 @@ KEYMAP="br-abnt2"
 MIRROR="Brazil"
 TIMEZONE="America/Sao_Paulo"
 
-setConsole() {
-    clear
-    loadkeys ${KEYMAP}
-    setfont ter-v18b
-}
-
 checkUefi() {
     if [ "$(cat /sys/firmware/efi/fw_platform_size)" != "64" ]; then
         printf "%b\n" "ERROR: A 64-bit UEFI system is required"
@@ -27,6 +21,12 @@ checkDisk() {
     else
         DISK=$1
     fi
+}
+
+setConsole() {
+    clear
+    loadkeys ${KEYMAP}
+    setfont ter-v18b
 }
 
 setUserInformation() {
@@ -77,7 +77,7 @@ setUserInformation() {
 }
 
 formatDisk() {
-    umount -A -R /mnt || true
+    umount -R /mnt || true
     sgdisk -Z "${DISK}"
     sgdisk -a 2048 "${DISK}"
 
@@ -156,7 +156,7 @@ configuration() {
 
     printf "%b\n" "Setting grub..."
     pacman -S --noconfirm --needed grub efibootmgr
-    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB --removable
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
     grub-mkconfig -o /boot/grub/grub.cfg
 
 EOF
