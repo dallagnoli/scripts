@@ -6,6 +6,7 @@ KEYMAP="br-abnt2"
 DISK="/dev/vda"
 
 initCheck() {
+    printf "Hello"
 }
 
 initScript() {
