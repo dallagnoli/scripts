@@ -1,0 +1,151 @@
+#!/bin/sh -e
+
+MIRROR="Brazil"
+TIMEZONE="America/Sao_Paulo"
+KEYMAP="br-abnt2"
+DISK="/dev/vda"
+
+initCheck() {
+}
+
+initScript() {
+    initCheck
+    clear
+    loadkeys $KEYMAP
+    setfont ter-v18b
+}
+
+userInformation() {
+    while :; do
+        printf "\n%b " "Enter your username:"
+        read -r username
+        username=$(printf "%s" "$username" | xargs | tr "[:upper:]" "[:lower:]")
+        if [ "$username" != "root" ] && printf "%s" "$username" | grep -Eq "^[a-z][-a-z0-9_]*\$"; then
+            USER="$username"
+            break
+        else
+            printf "%b\n" "WARNING: Invalid username"
+        fi
+    done
+
+    while :; do
+        printf "\n%b " "Enter your password:"
+        stty -echo
+        read -r password
+        stty echo
+
+        printf "\n%b " "Verify your password:"
+        stty -echo
+        read -r verify
+        stty echo
+
+        if [ "$password" != "$verify" ]; then
+            printf "\n%b\n" "WARNING: Passwords do not match"
+        elif [ "$password" = "$verify" ] && [ -n "$password" ]; then
+            PASSWORD="$password"
+            break
+        else
+            printf "\n%b\n" "WARNING: Invalid password"
+        fi  
+    done
+
+    while :; do
+        printf "\n\n%b " "Name your machine:"
+        read -r hostname
+        hostname=$(printf "%s" "$hostname" | xargs | tr "[:upper:]" "[:lower:]")
+        if printf "%s" "$hostname" | grep -Eq "^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])\.)*([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])$"; then
+            HOSTNAME="$hostname"
+            break
+        else
+            printf "%b" "WARNING: Invalid hostname"
+        fi
+    done
+}
+
+formatDisk() {
+    umount -A --recursive /mnt || true
+    sgdisk -Z "$DISK"
+    sgdisk -a 2048 "$DISK"
+
+    sgdisk -n 1::+1G -t=1:ef00 -c=1:"EFI" "$DISK"
+    sgdisk -n 2::-0 -t=2:8300 -c=2:"ROOT" "$DISK"
+
+    partprobe "$DISK"
+    
+    case "$DISK" in
+        *nvme*)
+            P1="$DISKp1"
+            P2="$DISKp2"
+            ;;
+        *)
+            P1="$DISK1"
+            P2="$DISK2"
+            ;;
+    esac
+
+    mkfs.fat -F 32 -n "EFI" "$P1"
+    mkfs.ext4 -F -L "ROOT" "$P2"
+
+    mount "$P2" /mnt
+    mount --mkdir "$P1" /mnt/boot
+}
+
+updateMirrors() {
+    printf "%b%s%b\n" "INFO: Fetching fastest mirrors for $MIRROR..."
+    reflector --country $MIRROR --latest 5 --protocol https --save /etc/pacman.d/mirrorlist
+}
+
+baseSystem() {
+    if [ "$(systemd-detect-virt)" = "none" ]; then
+        pacstrap -K /mnt base linux-lts linux-firmware
+    else
+        pacstrap -K /mnt base linux-lts
+    fi
+}
+
+sysConfig() {
+    genfstab -U /mnt >> /mnt/etc/fstab
+    arch-chroot /mnt /bin/bash <<EOF
+
+    printf "%b\n" "INFO: Setting timezone..."
+    ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
+    hwclock --systohc
+
+    printf "%b\n" "INFO: Setting locale..."
+    sed -i 's/^#pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/' /etc/locale.gen
+    locale-gen
+    printf "%b\n" "LANG=pt_BR.UTF-8" > /etc/locale.conf
+
+    printf "%b\n" "INFO: Setting keymap..."
+    printf "%b%s\n" "KEYMAP=" "$KEYMAP" > /etc/vconsole.conf
+
+    printf "%b\n" "INFO: Setting hostname..."
+    printf "%s\n" "$HOSTNAME" > /etc/hostname
+
+    printf "%b\n" "INFO: Setting network manager..."
+    pacman -S --noconfirm --needed networkmanager
+    systemctl enable NetworkManager
+
+    printf "%b\n" "INFO: Setting microcode..."
+    if grep -q "GenuineIntel" /proc/cpuinfo; then
+        pacman -S --noconfirm --needed intel-ucode
+    elif grep -q "AuthenticAMD" /proc/cpuinfo; then
+        pacman -S --noconfirm --needed amd-ucode
+    else
+        printf "%b\n" "WARNING: Unable to detect CPU vendor. Skipping microcode installation..."
+    fi
+
+    printf "%b\n" "INFO: Setting user..."
+    pacman -S --noconfirm --needed sudo
+    useradd -m -G wheel -s /bin/bash $USER
+    printf "%s:%s\n" "$USER" "$PASSWORD" | chpasswd
+    sed -i 's/^# %wheel ALL=(ALL:ALL) NOPASSWD: ALL/%wheel ALL=(ALL:ALL) NOPASSWD: ALL/' /etc/sudoers
+
+    printf "%b\n" "INFO: Setting grub..."
+    pacman -S --noconfirm --needed grub efibootmgr
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+    grub-mkconfig -o /boot/grub/grub.cfg
+
+EOF
+}
+
