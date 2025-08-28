@@ -150,3 +150,9 @@ sysConfig() {
 EOF
 }
 
+initScript
+userInformation
+formatDisk
+updateMirrors
+baseSystem
+sysConfig
