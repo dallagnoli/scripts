@@ -1,5 +1,8 @@
 #!/bin/sh -e
 
+USER="gab"
+HOSTNAME="archlinux"
+DISK="/dev/vda"
 MIRROR="Brazil" 
 TIMEZONE="America/Sao_Paulo"
 KEYMAP="br-abnt2"
@@ -35,19 +38,7 @@ checkEnv() {
     fi
 }
 
-userInformation() {
-    while :; do
-        printf "\n%b " "Enter your username:"
-        read -r username
-        username=$(printf "%s" "$username" | xargs | tr "[:upper:]" "[:lower:]")
-        if [ "$username" != "root" ] && printf "%s" "$username" | grep -Eq "^[a-z][-a-z0-9_]*\$"; then
-            USER="$username"
-            break
-        else
-            printf "%b\n" "WARNING: Invalid username"
-        fi
-    done
-
+setPasswd() {
     while :; do
         printf "\n%b " "Enter your password:"
         stty -echo
@@ -60,41 +51,13 @@ userInformation() {
         stty echo
 
         if [ "$password" != "$verify" ]; then
-            printf "\n%b\n" "WARNING: Passwords do not match"
+            printf "\n%b\n" "Passwords do not match"
         elif [ "$password" = "$verify" ] && [ -n "$password" ]; then
             PASSWORD="$password"
             break
         else
-            printf "\n%b\n" "WARNING: Invalid password"
+            printf "\n%b\n" "Invalid password"
         fi  
-    done
-
-    while :; do
-        printf "\n\n%b " "Name your machine:"
-        read -r hostname
-        hostname=$(printf "%s" "$hostname" | xargs | tr "[:upper:]" "[:lower:]")
-        if printf "%s" "$hostname" | grep -Eq "^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])\.)*([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])$"; then
-            HOSTNAME="$hostname"
-            break
-        else
-            printf "%b" "WARNING: Invalid hostname"
-        fi
-    done
-}
-
-diskSelection() {
-    while :; do
-        printf "%b\n" "Available disks:"
-        lsblk -dn -o NAME,SIZE,TYPE,TRAN | awk '$3 == "disk" && $4 != "usb" && $1 !~ /^(loop|ram|sr|fd)/ {printf "%s (%s)\n", $1, $2}'
-
-        read -rp "Enter the desired disk (e.g. nvme0n1): " INPUT_DISK
-        DISK="/dev/$INPUT_DISK"
-
-        if [ ! -b "$DISK" ]; then
-            printf "%b\n" "WARNING: Invalid device"
-        else
-            break
-        fi
     done
 }
 
@@ -129,7 +92,7 @@ diskMount() {
 }
 
 getMirrors() {
-    printf "%b%s%b\n" "INFO: Fetching fastest mirrors for $MIRROR..."
+    printf "%b%s%b\n" "Fetching fastest mirrors for $MIRROR..."
     reflector --country $MIRROR --latest 5 --protocol https --save /etc/pacman.d/mirrorlist
 }
 
@@ -145,41 +108,41 @@ setSystem() {
     genfstab -U /mnt >> /mnt/etc/fstab
     arch-chroot /mnt /bin/bash <<EOF
 
-    printf "%b\n" "INFO: Setting timezone..."
+    printf "%b\n" "Setting timezone..."
     ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
     hwclock --systohc
 
-    printf "%b\n" "INFO: Setting locale..."
+    printf "%b\n" "Setting locale..."
     sed -i 's/^#pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/' /etc/locale.gen
     locale-gen
     printf "%b\n" "LANG=pt_BR.UTF-8" > /etc/locale.conf
 
-    printf "%b\n" "INFO: Setting keymap..."
+    printf "%b\n" "Setting keymap..."
     printf "%b%s\n" "KEYMAP=" "$KEYMAP" > /etc/vconsole.conf
 
-    printf "%b\n" "INFO: Setting hostname..."
+    printf "%b\n" "Setting hostname..."
     printf "%s\n" "$HOSTNAME" > /etc/hostname
 
-    printf "%b\n" "INFO: Setting network manager..."
+    printf "%b\n" "Setting network manager..."
     pacman -S --noconfirm --needed networkmanager
     systemctl enable NetworkManager
 
-    printf "%b\n" "INFO: Setting microcode..."
+    printf "%b\n" "Setting microcode..."
     if grep -q "GenuineIntel" /proc/cpuinfo; then
         pacman -S --noconfirm --needed intel-ucode
     elif grep -q "AuthenticAMD" /proc/cpuinfo; then
         pacman -S --noconfirm --needed amd-ucode
     else
-        printf "%b\n" "WARNING: Unable to detect CPU vendor. Skipping microcode installation..."
+        printf "%b\n" "Unable to detect CPU vendor. Skipping microcode installation..."
     fi
 
-    printf "%b\n" "INFO: Setting user..."
+    printf "%b\n" "Setting user..."
     pacman -S --noconfirm --needed sudo
     useradd -m -G wheel -s /bin/bash $USER
     printf "%s:%s\n" "$USER" "$PASSWORD" | chpasswd
     sed -i 's/^# %wheel ALL=(ALL:ALL) NOPASSWD: ALL/%wheel ALL=(ALL:ALL) NOPASSWD: ALL/' /etc/sudoers
 
-    printf "%b\n" "INFO: Setting grub..."
+    printf "%b\n" "Setting grub..."
     pacman -S --noconfirm --needed grub efibootmgr
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB --removable
     grub-mkconfig -o /boot/grub/grub.cfg
@@ -190,22 +153,23 @@ EOF
 checkEnv
 clear
 setfont ter-v18b
-userInformation
-diskSelection
+setPasswd
+getMirrors
+clear
 diskFormat
 diskMount
-getMirrors
 baseSystem
 setSystem
+clear
 
-printf "%b\n" "INFO: Rebooting system in 5 seconds..."
+printf "%b\n" "Rebooting system in 5 seconds..."
 sleep 1
-printf "%b\n" "INFO: Rebooting system in 4 seconds..."
+printf "%b\n" "Rebooting system in 4 seconds..."
 sleep 1
-printf "%b\n" "INFO: Rebooting system in 3 seconds..."
+printf "%b\n" "Rebooting system in 3 seconds..."
 sleep 1
-printf "%b\n" "INFO: Rebooting system in 2 seconds..."
+printf "%b\n" "Rebooting system in 2 seconds..."
 sleep 1
-printf "%b\n" "INFO: Rebooting system in 1 second..."
+printf "%b\n" "Rebooting system in 1 second..."
 sleep 1
 systemctl reboot
