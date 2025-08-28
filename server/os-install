@@ -163,7 +163,7 @@ EOF
 }
 
 checkUefi
-checkDisk
+checkDisk "$1"
 setConsole
 setUserInformation
 clear
